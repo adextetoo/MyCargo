@@ -1,0 +1,1865 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ship Cargo Deck Planner</title>
+<style>
+  /* =========================================================
+     DESIGN TOKENS
+  ========================================================= */
+  :root{
+    --navy:#0d2b3e;
+    --navy-light:#16435e;
+    --accent:#2f9e8f;
+    --accent-dark:#1f7268;
+    --bg:#f3f6f8;
+    --panel-bg:#ffffff;
+    --border:#d7e0e6;
+    --text:#1c2b33;
+    --text-muted:#5d7180;
+    --danger:#d9534f;
+    --warning:#e0a030;
+    --ok:#3c9d56;
+    --deck-grad-1:#9aa7af;
+    --deck-grad-2:#717f88;
+    --radius: 8px;
+    --gap: 16px;
+  }
+
+  *{ box-sizing: border-box; }
+
+  body{
+    margin:0;
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  header.app-header{
+    background: var(--navy);
+    color:#fff;
+    padding: 14px 20px;
+  }
+  header.app-header h1{
+    margin:0;
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  header.app-header p{
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: #b9cdd8;
+  }
+
+  /* =========================================================
+     LAYOUT GRID
+     Desktop: 2-column grid, visualization column spans 3 rows.
+     Tablet/mobile: single column stack.
+  ========================================================= */
+  .app-container{
+    display:grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-areas:
+      "controls visualization"
+      "palette  visualization"
+      "share    visualization"
+      "report   report";
+    gap: var(--gap);
+    padding: var(--gap);
+    max-width: 1500px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 900px){
+    .app-container{
+      grid-template-columns: 1fr;
+      grid-template-areas:
+        "controls"
+        "visualization"
+        "palette"
+        "share"
+        "report";
+    }
+  }
+
+  section.panel{
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+
+  section.panel h2{
+    margin: 0 0 10px;
+    font-size: 1rem;
+    color: var(--navy);
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 6px;
+  }
+
+  #controls{ grid-area: controls; }
+  #palette{ grid-area: palette; }
+  #visualization{ grid-area: visualization; display:flex; flex-direction:column; }
+  #share-panel{ grid-area: share; }
+  #report-panel{ grid-area: report; }
+
+  /* =========================================================
+     CONTROL PANEL FORM STYLES
+  ========================================================= */
+  .field-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .field-row label{
+    flex: 1 1 auto;
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .field-row input[type="number"]{
+    width: 90px;
+    padding: 5px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-align:right;
+  }
+  .field-row input:disabled{
+    background: #eef1f3;
+    color: #9aa7af;
+  }
+
+  /* Toggle switch */
+  .switch{
+    position: relative;
+    display:inline-block;
+    width: 38px;
+    height: 20px;
+    flex: 0 0 auto;
+  }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{
+    position:absolute; cursor:pointer;
+    top:0; left:0; right:0; bottom:0;
+    background:#c9d3d9;
+    border-radius: 20px;
+    transition: 0.15s;
+  }
+  .slider::before{
+    position:absolute;
+    content:"";
+    height:14px; width:14px;
+    left:3px; bottom:3px;
+    background:white;
+    border-radius:50%;
+    transition:0.15s;
+  }
+  .switch input:checked + .slider{ background: var(--accent); }
+  .switch input:checked + .slider::before{ transform: translateX(18px); }
+
+  .toggle-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 10px 0 4px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+  }
+  .toggle-row span{ font-size:0.85rem; font-weight:600; }
+
+  /* Read-only computed value rows */
+  .stat-row{
+    display:flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    padding: 3px 0;
+    border-bottom: 1px solid #f0f3f5;
+  }
+  .stat-row strong{ color: var(--navy); }
+  .stat-row.warn strong{ color: var(--danger); }
+  .stat-row.ok strong{ color: var(--ok); }
+
+  .small-note{
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin: 6px 0 0;
+  }
+
+  button{
+    cursor:pointer;
+    border:none;
+    border-radius: 5px;
+    padding: 7px 12px;
+    font-size: 0.8rem;
+    font-weight:600;
+    background: var(--accent);
+    color:#fff;
+    transition: background 0.15s;
+  }
+  button:hover{ background: var(--accent-dark); }
+  button.secondary{ background: var(--navy-light); }
+  button.secondary:hover{ background: var(--navy); }
+  button.danger{ background: var(--danger); }
+  button.danger:hover{ background:#b6403c; }
+  button.ghost{ background:#eef3f5; color: var(--navy); }
+  button.ghost:hover{ background:#dde7eb; }
+  button:disabled{ background:#c9d3d9; cursor:not-allowed; }
+
+  .btn-row{ display:flex; gap:8px; margin-top: 10px; flex-wrap: wrap; }
+
+  /* =========================================================
+     PALETTE
+  ========================================================= */
+  .palette-grid{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .palette-item{
+    flex: 1 1 calc(50% - 8px);
+    min-width: 120px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    cursor: grab;
+    background: #fbfdfe;
+    transition: box-shadow 0.15s, transform 0.1s;
+  }
+  .palette-item:active{ cursor: grabbing; }
+  .palette-item:hover{ box-shadow: 0 2px 6px rgba(0,0,0,0.12); transform: translateY(-1px); }
+  .palette-item .swatch{
+    display:inline-block;
+    width: 14px; height:14px;
+    border-radius: 3px;
+    margin-right: 6px;
+    vertical-align: middle;
+    border: 1px solid rgba(0,0,0,0.15);
+  }
+  .palette-item .pname{ font-weight:600; font-size: 0.85rem; }
+  .palette-item .pdims{ font-size: 0.75rem; color: var(--text-muted); margin-top:2px; }
+
+  .orientation-row{
+    display:flex;
+    align-items:center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px;
+    background: #f7fafb;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.8rem;
+  }
+
+  .custom-form{
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .custom-form h3{ margin: 0 0 6px; font-size: 0.85rem; color: var(--navy);}
+  .custom-form .grid2{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .custom-form input{
+    padding: 5px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    width: 100%;
+  }
+  .custom-form label{ font-size: 0.75rem; color: var(--text-muted); display:block; margin-bottom:2px; }
+
+  /* =========================================================
+     VISUALIZATION — two stacked layout cards
+  ========================================================= */
+  .layout-card{
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 12px;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    cursor: pointer;
+  }
+  .layout-card:last-child{ margin-bottom: 0; }
+  .layout-card.active{
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(47,158,143,0.15);
+  }
+  .layout-card .canvas-wrapper{ cursor: default; }
+
+  .layout-header{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .layout-header h3{
+    margin:0;
+    font-size: 0.95rem;
+    color: var(--navy);
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .active-badge{
+    font-size: 0.65rem;
+    background: var(--accent);
+    color:#fff;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-weight:700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .layout-card:not(.active) .active-badge{ display:none; }
+  .select-hint{
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .layout-card.active .select-hint{ display:none; }
+
+  .mini-stats{
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display:flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .mini-stats strong{ color: var(--navy); }
+  .mini-stats .mini-warn{ color: var(--danger); font-weight:700; }
+
+  .canvas-wrapper{
+    position: relative;
+    width: 100%;
+    height: 260px;
+    background: #c7d0d6;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  @media (max-width: 900px){
+    .canvas-wrapper{ height: 220px; }
+  }
+  canvas{ display:block; }
+
+  .layout-actions{
+    display:flex;
+    gap:6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .feedback-msg{
+    margin-top: 8px;
+    font-size: 0.8rem;
+    min-height: 1.2em;
+    color: var(--text-muted);
+  }
+  .feedback-msg.error{ color: var(--danger); font-weight:600; }
+  .feedback-msg.success{ color: var(--ok); font-weight:600; }
+
+  .legend{
+    display:flex;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    margin-top: 8px;
+    color: var(--text-muted);
+  }
+  .legend .lswatch{
+    display:inline-block;
+    width: 14px; height: 14px;
+    margin-right: 4px;
+    vertical-align: middle;
+    border: 1px solid rgba(0,0,0,0.2);
+    border-radius: 2px;
+  }
+  .legend .lswatch.reserved{ background: var(--danger); opacity:0.4; }
+  .legend .lswatch.lane{ background: var(--warning); opacity:0.4; }
+  .legend .lswatch.selected{ background:#fff; border:2px solid var(--accent); }
+
+  /* =========================================================
+     SHARE PANEL
+  ========================================================= */
+  #share-panel p{
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 0 0 8px;
+  }
+  .share-target{
+    font-size: 0.8rem;
+    font-weight:700;
+    color: var(--navy);
+  }
+
+  /* =========================================================
+     REPORT
+  ========================================================= */
+  #report-text{
+    font-family: "Consolas", monospace;
+    font-size: 0.85rem;
+    background: #f7fafb;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+  #report-charcount{
+    text-align:right;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>⚓ Ship Cargo Deck Planner</h1>
+  <p>Plan container stowage, compare two layouts side by side, and track utilization &amp; payload limits in real time. All units are metric (m, m², t).</p>
+</header>
+
+<div class="app-container">
+
+  <!-- =====================================================
+       CONTROL PANEL: deck params, toggles, computed stats
+  ====================================================== -->
+  <section id="controls" class="panel">
+    <h2>Deck Parameters</h2>
+
+    <div class="field-row">
+      <label for="deckLength">Deck Length (m)</label>
+      <input type="number" id="deckLength" min="1" step="0.5" value="30">
+    </div>
+    <div class="field-row">
+      <label for="deckWidth">Deck Width (m)</label>
+      <input type="number" id="deckWidth" min="1" step="0.5" value="15">
+    </div>
+    <div class="field-row">
+      <label>Total Deck Area (m²)</label>
+      <input type="text" id="totalArea" value="450" disabled>
+    </div>
+
+    <!-- Max payload toggle -->
+    <div class="toggle-row">
+      <span>Enable Max Payload</span>
+      <label class="switch">
+        <input type="checkbox" id="payloadToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="field-row">
+      <label for="maxPayload">Max Deck Payload (t)</label>
+      <input type="number" id="maxPayload" min="0" step="1" value="100" disabled>
+    </div>
+
+    <!-- Reserved area toggle -->
+    <div class="toggle-row">
+      <span>Enable Reserved Area</span>
+      <label class="switch">
+        <input type="checkbox" id="reservedToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="field-row">
+      <label for="reservedArea">Reserved No-Cargo Area (m²)</label>
+      <input type="number" id="reservedArea" min="0" step="1" value="20" disabled>
+    </div>
+
+    <!-- Access lane toggle -->
+    <div class="toggle-row">
+      <span>Enable Access Lane</span>
+      <label class="switch">
+        <input type="checkbox" id="laneToggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="field-row">
+      <label for="laneWidth">Clear Access Lane Width (m)</label>
+      <input type="number" id="laneWidth" min="0" step="0.5" value="2" disabled>
+    </div>
+
+    <p class="small-note">Deck size, payload limit, reserved area and access lane are shared by both layouts below, so the two arrangements stay directly comparable.</p>
+
+    <h2 style="margin-top:14px;">Live Stats <span style="font-size:0.75rem;color:var(--text-muted);">(<span id="statsLayoutLabel">Layout A</span>)</span></h2>
+    <div class="stat-row"><span>Usable Deck Area</span><strong id="statUsable">0 m²</strong></div>
+    <div class="stat-row"><span>Occupied Area</span><strong id="statOccupied">0 m²</strong></div>
+    <div class="stat-row"><span>Utilization</span><strong id="statUtilization">0 %</strong></div>
+    <div class="stat-row"><span>Total Container Weight</span><strong id="statWeight">0 t</strong></div>
+    <div class="stat-row" id="statPayloadRow"><span>Payload Status</span><strong id="statPayload">Not enforced</strong></div>
+
+    <div class="btn-row">
+      <button class="secondary" id="resetBtn">Reset Everything</button>
+    </div>
+  </section>
+
+  <!-- =====================================================
+       PALETTE: predefined + custom container types
+  ====================================================== -->
+  <section id="palette" class="panel">
+    <h2>Container Palette (drag onto a deck layout)</h2>
+
+    <div class="orientation-row">
+      <label class="switch">
+        <input type="checkbox" id="placeRotatedToggle">
+        <span class="slider"></span>
+      </label>
+      <span>Place rotated (swap length ↔ width on drop)</span>
+    </div>
+
+    <div class="palette-grid" id="paletteGrid"></div>
+
+    <div class="custom-form">
+      <h3>Add Custom Container</h3>
+      <div class="grid2">
+        <div>
+          <label for="custName">Name</label>
+          <input type="text" id="custName" placeholder="e.g. Tank 1">
+        </div>
+        <div>
+          <label for="custWeight">Weight (t)</label>
+          <input type="number" id="custWeight" min="0" step="0.1" value="2">
+        </div>
+        <div>
+          <label for="custLength">Length (m)</label>
+          <input type="number" id="custLength" min="0.1" step="0.1" value="3">
+        </div>
+        <div>
+          <label for="custWidth">Width (m)</label>
+          <input type="number" id="custWidth" min="0.1" step="0.1" value="2">
+        </div>
+      </div>
+      <button id="addCustomBtn" style="width:100%;">+ Add to Palette</button>
+    </div>
+  </section>
+
+  <!-- =====================================================
+       VISUALIZATION: two stacked deck layouts
+  ====================================================== -->
+  <section id="visualization" class="panel">
+    <h2>Deck Layouts — click a layout to select it, then drag/drop/rotate</h2>
+
+    <!-- Layout A -->
+    <div class="layout-card" id="layoutCardA" data-layout="A">
+      <div class="layout-header">
+        <h3>Layout A <span class="active-badge">Active</span> <span class="select-hint">(click to select)</span></h3>
+        <div class="mini-stats" id="miniStatsA"></div>
+      </div>
+      <div class="canvas-wrapper" id="canvasWrapperA">
+        <canvas id="deckCanvasA"></canvas>
+      </div>
+      <div class="layout-actions">
+        <button class="ghost" data-action="rotate" data-layout="A">Rotate Selected (90°)</button>
+        <button class="danger" data-action="delete" data-layout="A">Delete Selected</button>
+        <button class="secondary" data-action="clear" data-layout="A">Clear Layout</button>
+      </div>
+    </div>
+
+    <!-- Layout B -->
+    <div class="layout-card" id="layoutCardB" data-layout="B">
+      <div class="layout-header">
+        <h3>Layout B <span class="active-badge">Active</span> <span class="select-hint">(click to select)</span></h3>
+        <div class="mini-stats" id="miniStatsB"></div>
+      </div>
+      <div class="canvas-wrapper" id="canvasWrapperB">
+        <canvas id="deckCanvasB"></canvas>
+      </div>
+      <div class="layout-actions">
+        <button class="ghost" data-action="rotate" data-layout="B">Rotate Selected (90°)</button>
+        <button class="danger" data-action="delete" data-layout="B">Delete Selected</button>
+        <button class="secondary" data-action="clear" data-layout="B">Clear Layout</button>
+      </div>
+    </div>
+
+    <div class="feedback-msg" id="feedbackMsg">Click "Layout A" or "Layout B" to select it, then drag a container from the palette onto its deck.</div>
+    <div class="legend">
+      <span><span class="lswatch reserved"></span>Reserved no-cargo area</span>
+      <span><span class="lswatch lane"></span>Access lane</span>
+      <span><span class="lswatch selected"></span>Selected container (click it, then Rotate/Delete)</span>
+    </div>
+  </section>
+
+  <!-- =====================================================
+       SHARE / EXPORT
+  ====================================================== -->
+  <section id="share-panel" class="panel">
+    <h2>Share Snapshot</h2>
+    <p>Captures the currently active layout (<span class="share-target" id="shareTargetLabel">Layout A</span>) as an image, including its key stats.</p>
+    <div class="btn-row" style="margin-top:0;">
+      <button id="shareNativeBtn">📤 Share (mobile)</button>
+      <button class="secondary" id="downloadBtn">⬇️ Download Image</button>
+      <button class="ghost" id="emailBtn">✉️ Email</button>
+      <button class="ghost" id="whatsappBtn">💬 WhatsApp</button>
+    </div>
+    <p class="small-note">"Share" opens your device's native share sheet (Email, WhatsApp, Messages, etc.) when supported. Otherwise, download the image first, then use Email/WhatsApp to attach it manually — those buttons open a pre-filled message with the plan summary.</p>
+  </section>
+
+  <!-- =====================================================
+       REPORT
+  ====================================================== -->
+  <section id="report-panel" class="panel">
+    <h2>Plan Summary Report</h2>
+    <div id="report-text"></div>
+    <div id="report-charcount"></div>
+  </section>
+
+</div>
+
+<script>
+/* =============================================================
+   SHIP CARGO DECK PLANNER — APPLICATION LOGIC
+   Pure vanilla JS. Drag/drop and repositioning are implemented
+   with native mouse events on <canvas> elements for reliable,
+   precise collision detection, while the palette uses native
+   HTML5 Drag and Drop (dragstart/drop) to move containers onto
+   either of the two deck layouts.
+   ============================================================= */
+
+/* -------------------------------------------------------------
+   DESIGN ASSUMPTIONS (documented per task instructions):
+
+   1. GRID RESOLUTION: All placements snap to a 1 m grid for
+      position and collision checks.
+
+   2. EDGE / "CLOSED GAP" SNAPPING: While dragging (new drop or
+      repositioning), if a container's edge ends up within
+      SNAP_THRESHOLD (0.5 m) of the deck boundary, a restricted
+      zone edge, or another container's edge, that edge is
+      snapped flush (zero gap) against it — independently for
+      the X and Y axes, and only against neighbours that
+      actually overlap the container's footprint on the other
+      axis (so it only "sticks" to things genuinely beside it).
+
+   3. ROTATION: Each container can be rotated 90° via the
+      "Rotate Selected" button (swaps its length/width). New
+      containers can also be dropped pre-rotated using the
+      "Place rotated" toggle above the palette. There is no
+      continuous-angle rotation — only axis-aligned 0°/90°,
+      matching how real container bays are laid out.
+
+   4. TWO INDEPENDENT LAYOUTS: "Layout A" and "Layout B" share
+      the same deck parameters (size, payload limit, reserved
+      area, access lane) so they remain directly comparable,
+      but each has its OWN independent set of placed containers.
+      Only the ACTIVE layout (selected by clicking its card)
+      accepts drag/drop, repositioning, rotation and deletion —
+      this prevents accidentally editing the wrong layout while
+      comparing arrangements.
+
+   5. RESERVED NO-CARGO AREA: derived as a rectangle spanning the
+      full deck WIDTH at the aft (right-hand) end of the deck:
+          reservedLength = reservedArea / deckWidth
+          rect = { x: deckLength - reservedLength, y: 0,
+                   length: reservedLength, width: deckWidth }
+
+   6. ACCESS LANE: spans the full deck LENGTH along one side
+      (bottom edge in the drawing), with the user-specified
+      width:
+          rect = { x: 0, y: deckWidth - laneWidth,
+                   length: deckLength, width: laneWidth }
+
+   7. DECK VISUAL STYLE: the canvas is drawn with a steel-grey
+      gradient, a fine 1 m grid (deck plating seams), and bold
+      lines every 5 m labelled with bay (length) and row (width)
+      numbers along the edges — similar to a real stowage/bay
+      plan — to make the layout easier to read at a glance.
+
+   8. SHARING: a snapshot of the active layout's canvas (with a
+      title and key stats baked in) is generated as a PNG. If the
+      browser supports the Web Share API with files
+      (navigator.canShare), a native share sheet is opened
+      (covering Email, WhatsApp, Messages, etc. on supported
+      devices). Otherwise the image is downloaded, and dedicated
+      Email/WhatsApp buttons open a pre-filled text message with
+      the plan summary so the user can attach the downloaded
+      image manually (browsers cannot attach files to mailto:/
+      wa.me links directly).
+
+   9. UNITS: Everything is metric (m, m², t). No imperial
+      conversions are performed anywhere in the app.
+   ------------------------------------------------------------- */
+
+// ---------------------------------------------------------------
+// 1. STATE
+// ---------------------------------------------------------------
+const STORAGE_KEY = 'shipCargoPlannerStateV2';
+const SNAP_THRESHOLD = 0.5; // metres, for "closed gap" edge snapping
+const LAYOUT_KEYS = ['A','B'];
+
+function emptyLayout(){
+  return { containers: [], nextId: 1, selectedId: null };
+}
+
+function defaultState(){
+  return {
+    deckLength: 30,
+    deckWidth: 15,
+    payloadEnabled: false,
+    maxPayload: 100,
+    reservedEnabled: false,
+    reservedArea: 20,
+    laneEnabled: false,
+    laneWidth: 2,
+    activeLayout: 'A',
+    layouts: { A: emptyLayout(), B: emptyLayout() }
+  };
+}
+
+let state = defaultState();
+
+// Predefined container types (length m, width m, weight t).
+const PREDEFINED_TYPES = [
+  { name: '10ft', length: 3.0,  width: 2.44, weight: 1.2,  color: '#4a90d9', custom:false },
+  { name: '20ft', length: 6.1,  width: 2.44, weight: 2.3,  color: '#50b86c', custom:false },
+  { name: '40ft', length: 12.2, width: 2.44, weight: 3.7,  color: '#e0a030', custom:false },
+  { name: '45ft', length: 13.7, width: 2.44, weight: 4.0,  color: '#9b6bdb', custom:false }
+];
+
+const CUSTOM_COLORS = ['#d9534f','#1abc9c','#f39c12','#8e44ad','#16a085','#c0392b','#2980b9'];
+let customColorIndex = 0;
+let containerTypes = [...PREDEFINED_TYPES];
+
+// ---------------------------------------------------------------
+// 2. DOM REFERENCES
+// ---------------------------------------------------------------
+const el = (id) => document.getElementById(id);
+
+const inputs = {
+  deckLength: el('deckLength'),
+  deckWidth: el('deckWidth'),
+  totalArea: el('totalArea'),
+  payloadToggle: el('payloadToggle'),
+  maxPayload: el('maxPayload'),
+  reservedToggle: el('reservedToggle'),
+  reservedArea: el('reservedArea'),
+  laneToggle: el('laneToggle'),
+  laneWidth: el('laneWidth'),
+  placeRotatedToggle: el('placeRotatedToggle')
+};
+
+const stats = {
+  usable: el('statUsable'),
+  occupied: el('statOccupied'),
+  utilization: el('statUtilization'),
+  weight: el('statWeight'),
+  payload: el('statPayload'),
+  payloadRow: el('statPayloadRow'),
+  layoutLabel: el('statsLayoutLabel')
+};
+
+const canvases = { A: el('deckCanvasA'), B: el('deckCanvasB') };
+const ctxs = { A: canvases.A.getContext('2d'), B: canvases.B.getContext('2d') };
+const wrappers = { A: el('canvasWrapperA'), B: el('canvasWrapperB') };
+const layoutCards = { A: el('layoutCardA'), B: el('layoutCardB') };
+const miniStatsEls = { A: el('miniStatsA'), B: el('miniStatsB') };
+
+const feedback = el('feedbackMsg');
+const reportText = el('report-text');
+const reportCharCount = el('report-charcount');
+const paletteGrid = el('paletteGrid');
+const shareTargetLabel = el('shareTargetLabel');
+
+// Drawing geometry per layout (recomputed on every render)
+const geos = { A: {scale:1,offsetX:0,offsetY:0,w:0,h:0}, B: {scale:1,offsetX:0,offsetY:0,w:0,h:0} };
+
+// ---------------------------------------------------------------
+// 3. PERSISTENCE (localStorage)
+// ---------------------------------------------------------------
+function saveState(){
+  try{
+    const payload = {
+      state: state,
+      customTypes: containerTypes.filter(t => t.custom),
+      customColorIndex: customColorIndex
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  }catch(e){
+    console.warn('Could not save state:', e);
+  }
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed.state){
+      const loaded = parsed.state;
+      const fresh = defaultState();
+      // Merge while guarding against missing/old-format layout data.
+      state = Object.assign(fresh, loaded);
+      if(!state.layouts || !state.layouts.A || !state.layouts.B){
+        state.layouts = { A: emptyLayout(), B: emptyLayout() };
+      }
+      if(state.activeLayout !== 'A' && state.activeLayout !== 'B') state.activeLayout = 'A';
+    }
+    if(Array.isArray(parsed.customTypes)){
+      containerTypes = [...PREDEFINED_TYPES, ...parsed.customTypes];
+    }
+    if(typeof parsed.customColorIndex === 'number'){
+      customColorIndex = parsed.customColorIndex;
+    }
+  }catch(e){
+    console.warn('Could not load saved state:', e);
+  }
+}
+
+// ---------------------------------------------------------------
+// 4. LAYOUT HELPERS
+// ---------------------------------------------------------------
+function LD(key){ return state.layouts[key]; }
+function activeKey(){ return state.activeLayout; }
+
+// ---------------------------------------------------------------
+// 5. GEOMETRY HELPERS (zones, collisions, validation, snapping)
+// ---------------------------------------------------------------
+
+function getReservedRect(){
+  if(!state.reservedEnabled || state.reservedArea <= 0) return null;
+  let length = state.reservedArea / state.deckWidth;
+  length = Math.min(length, state.deckLength);
+  return { x: state.deckLength - length, y: 0, length: length, width: state.deckWidth };
+}
+
+function getLaneRect(){
+  if(!state.laneEnabled || state.laneWidth <= 0) return null;
+  let w = Math.min(state.laneWidth, state.deckWidth);
+  return { x: 0, y: state.deckWidth - w, length: state.deckLength, width: w };
+}
+
+function rectsOverlap(a, b){
+  const eps = 1e-6;
+  return (a.x < b.x + b.length - eps) && (a.x + a.length > b.x + eps) &&
+         (a.y < b.y + b.width  - eps) && (a.y + a.width  > b.y + eps);
+}
+
+function rangesOverlap(aStart, aEnd, bStart, bEnd){
+  const eps = 1e-6;
+  return aStart < bEnd - eps && bStart < aEnd - eps;
+}
+
+// Validity check scoped to one layout's container list.
+function isValidPlacement(rect, excludeId, layoutKey){
+  const eps = 1e-6;
+  if(rect.x < -eps || rect.y < -eps) return false;
+  if(rect.x + rect.length > state.deckLength + eps) return false;
+  if(rect.y + rect.width  > state.deckWidth  + eps) return false;
+
+  const reserved = getReservedRect();
+  if(reserved && rectsOverlap(rect, reserved)) return false;
+
+  const lane = getLaneRect();
+  if(lane && rectsOverlap(rect, lane)) return false;
+
+  for(const c of LD(layoutKey).containers){
+    if(c.id === excludeId) continue;
+    if(rectsOverlap(rect, c)) return false;
+  }
+  return true;
+}
+
+function isContainerInvalid(container, layoutKey){
+  const rect = { x: container.x, y: container.y, length: container.length, width: container.width };
+  return !isValidPlacement(rect, container.id, layoutKey);
+}
+
+function getInvalidContainers(layoutKey){
+  return LD(layoutKey).containers.filter(c => isContainerInvalid(c, layoutKey));
+}
+
+// --- "Closed gap" edge snapping ---------------------------------
+// Snap a single axis value so the moving rectangle's edge sits
+// flush against the nearest qualifying neighbour edge (deck
+// boundary, restricted zone, or another container), if within
+// SNAP_THRESHOLD.
+function snapAxis(current, size, deckSize, obstacleRanges){
+  let candidates = [0, deckSize - size];
+  for(const o of obstacleRanges){
+    candidates.push(o.start - size); // moving rect's far edge touches obstacle's near edge
+    candidates.push(o.end);          // moving rect's near edge touches obstacle's far edge
+  }
+  let best = current, bestDist = SNAP_THRESHOLD;
+  for(const cand of candidates){
+    if(cand < -1e-6 || cand > deckSize - size + 1e-6) continue;
+    const dist = Math.abs(cand - current);
+    if(dist <= bestDist){
+      bestDist = dist;
+      best = cand;
+    }
+  }
+  return Math.round(best * 100) / 100; // keep to 2 decimals to avoid float drift
+}
+
+// Applies edge snapping for both axes for a moving rect, only
+// considering neighbours that overlap on the perpendicular axis
+// (i.e. things genuinely beside the container).
+function applyEdgeSnap(rect, layoutKey, excludeId){
+  const zones = [];
+  const reserved = getReservedRect();
+  const lane = getLaneRect();
+  if(reserved) zones.push(reserved);
+  if(lane) zones.push(lane);
+
+  const others = LD(layoutKey).containers.filter(c => c.id !== excludeId);
+  const all = [...zones, ...others];
+
+  const obstaclesX = all
+    .filter(o => rangesOverlap(rect.y, rect.y + rect.width, o.y, o.y + o.width))
+    .map(o => ({ start: o.x, end: o.x + o.length }));
+
+  const obstaclesY = all
+    .filter(o => rangesOverlap(rect.x, rect.x + rect.length, o.x, o.x + o.length))
+    .map(o => ({ start: o.y, end: o.y + o.width }));
+
+  const snappedX = snapAxis(rect.x, rect.length, state.deckLength, obstaclesX);
+  const snappedY = snapAxis(rect.y, rect.width, state.deckWidth, obstaclesY);
+  return { x: snappedX, y: snappedY };
+}
+
+// Spiral search for the nearest valid 1m-aligned spot to (startX,startY).
+function findNearestValidSpot(type, startX, startY, layoutKey){
+  startX = Math.round(startX);
+  startY = Math.round(startY);
+  const maxLen = Math.ceil(state.deckLength);
+  const maxWid = Math.ceil(state.deckWidth);
+
+  for(let radius = 0; radius <= maxLen + maxWid; radius++){
+    for(let dx = -radius; dx <= radius; dx++){
+      for(let dy = -radius; dy <= radius; dy++){
+        if(Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        const x = startX + dx;
+        const y = startY + dy;
+        if(x < 0 || y < 0) continue;
+        if(x + type.length > state.deckLength) continue;
+        if(y + type.width  > state.deckWidth)  continue;
+        const rect = { x, y, length: type.length, width: type.width };
+        if(isValidPlacement(rect, null, layoutKey)) return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------
+// 6. CALCULATIONS (per layout)
+// ---------------------------------------------------------------
+function calcTotalArea(){
+  return state.deckLength * state.deckWidth;
+}
+
+function calcUsableArea(){
+  let area = calcTotalArea();
+  if(state.reservedEnabled) area -= Math.min(state.reservedArea, area);
+  if(state.laneEnabled) area -= Math.min(state.laneWidth * state.deckLength, area);
+  return Math.max(0, area);
+}
+
+function calcOccupiedArea(layoutKey){
+  return LD(layoutKey).containers.reduce((sum, c) => sum + (c.length * c.width), 0);
+}
+
+function calcUtilization(layoutKey){
+  const usable = calcUsableArea();
+  if(usable <= 0) return 0;
+  return (calcOccupiedArea(layoutKey) / usable) * 100;
+}
+
+function calcTotalWeight(layoutKey){
+  return LD(layoutKey).containers.reduce((sum, c) => sum + c.weight, 0);
+}
+
+// ---------------------------------------------------------------
+// 7. RENDER: stats, mini-stats, report, palette
+// ---------------------------------------------------------------
+function fmt(n, decimals = 1){
+  return (Math.round(n * Math.pow(10, decimals)) / Math.pow(10, decimals)).toString();
+}
+
+function renderStats(){
+  const key = activeKey();
+  const usable = calcUsableArea();
+  const occupied = calcOccupiedArea(key);
+  const util = calcUtilization(key);
+  const weight = calcTotalWeight(key);
+
+  inputs.totalArea.value = fmt(calcTotalArea(), 1) + ' m²';
+  stats.layoutLabel.textContent = 'Layout ' + key;
+  stats.usable.textContent = fmt(usable, 1) + ' m²';
+  stats.occupied.textContent = fmt(occupied, 1) + ' m²';
+  stats.utilization.textContent = fmt(util, 1) + ' %';
+  stats.weight.textContent = fmt(weight, 2) + ' t';
+
+  if(state.payloadEnabled){
+    const over = weight > state.maxPayload + 1e-9;
+    stats.payload.textContent = over
+      ? `OVER LIMIT (${fmt(weight,2)} / ${fmt(state.maxPayload,2)} t)`
+      : `OK (${fmt(weight,2)} / ${fmt(state.maxPayload,2)} t)`;
+    stats.payloadRow.className = 'stat-row ' + (over ? 'warn' : 'ok');
+  }else{
+    stats.payload.textContent = 'Not enforced';
+    stats.payloadRow.className = 'stat-row';
+  }
+}
+
+function renderMiniStats(){
+  LAYOUT_KEYS.forEach(key => {
+    const util = calcUtilization(key);
+    const weight = calcTotalWeight(key);
+    const count = LD(key).containers.length;
+    const invalid = getInvalidContainers(key);
+    let overPayload = state.payloadEnabled && weight > state.maxPayload + 1e-9;
+
+    let html = `<span>Util: <strong>${fmt(util,1)}%</strong></span>` +
+               `<span>Weight: <strong>${fmt(weight,2)}t</strong></span>` +
+               `<span>Containers: <strong>${count}</strong></span>`;
+    if(overPayload) html += `<span class="mini-warn">⚠ Over payload</span>`;
+    if(invalid.length > 0) html += `<span class="mini-warn">⚠ ${invalid.length} invalid</span>`;
+    miniStatsEls[key].innerHTML = html;
+  });
+}
+
+function buildReportText(layoutKey){
+  const usable = calcUsableArea();
+  const occupied = calcOccupiedArea(layoutKey);
+  const util = calcUtilization(layoutKey);
+  const weight = calcTotalWeight(layoutKey);
+  const count = LD(layoutKey).containers.length;
+  const invalid = getInvalidContainers(layoutKey);
+
+  let warnings = [];
+  if(state.payloadEnabled && weight > state.maxPayload + 1e-9){
+    warnings.push(`OVER PAYLOAD by ${fmt(weight - state.maxPayload,1)}t`);
+  }
+  if(invalid.length > 0){
+    warnings.push(`${invalid.length} container(s) in invalid position (overlap/out-of-bounds/restricted zone)`);
+  }
+  if(occupied > usable + 1e-6){
+    warnings.push('Occupied area exceeds usable area');
+  }
+
+  let lines = [];
+  lines.push(`Layout ${layoutKey} — Deck: ${fmt(state.deckLength,1)}m x ${fmt(state.deckWidth,1)}m (${fmt(calcTotalArea(),1)}m²).`);
+  lines.push(`Usable: ${fmt(usable,1)}m² | Occupied: ${fmt(occupied,1)}m² | Util: ${fmt(util,1)}%.`);
+  lines.push(`Containers: ${count} | Total weight: ${fmt(weight,2)}t` +
+    (state.payloadEnabled ? ` (limit ${fmt(state.maxPayload,2)}t)` : ' (no limit set)') + '.');
+
+  if(warnings.length > 0){
+    lines.push('WARNINGS: ' + warnings.join('; ') + '.');
+  }else{
+    lines.push('Status: all placements valid, no warnings.');
+  }
+
+  let text = lines.join('\n');
+  if(text.length > 500) text = text.slice(0, 497) + '...';
+  return text;
+}
+
+function renderReport(){
+  const text = buildReportText(activeKey());
+  reportText.textContent = text;
+  reportCharCount.textContent = `${text.length} / 500 characters`;
+}
+
+function renderPalette(){
+  paletteGrid.innerHTML = '';
+  containerTypes.forEach((type, index) => {
+    const item = document.createElement('div');
+    item.className = 'palette-item';
+    item.draggable = true;
+    item.dataset.index = index;
+    item.innerHTML = `
+      <div><span class="swatch" style="background:${type.color}"></span><span class="pname">${escapeHtml(type.name)}</span></div>
+      <div class="pdims">${fmt(type.length,1)}m x ${fmt(type.width,1)}m &middot; ${fmt(type.weight,2)}t</div>
+    `;
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', String(index));
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    paletteGrid.appendChild(item);
+  });
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ---------------------------------------------------------------
+// 8. CANVAS RENDERING
+// ---------------------------------------------------------------
+
+function computeGeometry(key){
+  const wrapW = wrappers[key].clientWidth;
+  const wrapH = wrappers[key].clientHeight;
+
+  canvases[key].width = wrapW;
+  canvases[key].height = wrapH;
+
+  const scaleX = wrapW / state.deckLength;
+  const scaleY = wrapH / state.deckWidth;
+  const scale = Math.min(scaleX, scaleY);
+
+  const deckPxW = state.deckLength * scale;
+  const deckPxH = state.deckWidth * scale;
+
+  geos[key].scale = scale;
+  geos[key].offsetX = (wrapW - deckPxW) / 2;
+  geos[key].offsetY = (wrapH - deckPxH) / 2;
+  geos[key].w = deckPxW;
+  geos[key].h = deckPxH;
+}
+
+function pxToMeters(key, px, py){
+  const g = geos[key];
+  return { x: (px - g.offsetX) / g.scale, y: (py - g.offsetY) / g.scale };
+}
+function metersToPx(key, x, y){
+  const g = geos[key];
+  return { x: g.offsetX + x * g.scale, y: g.offsetY + y * g.scale };
+}
+
+// Rounded-rect helper with fallback for older browsers.
+function roundRectPath(ctx, x, y, w, h, r){
+  if(typeof ctx.roundRect === 'function'){
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+  }else{
+    const rr = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x+rr, y);
+    ctx.arcTo(x+w, y,   x+w, y+h, rr);
+    ctx.arcTo(x+w, y+h, x,   y+h, rr);
+    ctx.arcTo(x,   y+h, x,   y,   rr);
+    ctx.arcTo(x,   y,   x+w, y,   rr);
+    ctx.closePath();
+  }
+}
+
+function drawLayout(key){
+  const ctx = ctxs[key];
+  const g = geos[key];
+  ctx.clearRect(0, 0, canvases[key].width, canvases[key].height);
+
+  // --- Deck base: steel-grey gradient, imitates a real cargo deck ---
+  const grad = ctx.createLinearGradient(g.offsetX, g.offsetY, g.offsetX, g.offsetY + g.h);
+  grad.addColorStop(0, '#9aa7af');
+  grad.addColorStop(1, '#717f88');
+  roundRectPath(ctx, g.offsetX, g.offsetY, g.w, g.h, 4);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.save();
+  roundRectPath(ctx, g.offsetX, g.offsetY, g.w, g.h, 4);
+  ctx.clip();
+
+  // --- Fine 1m grid (deck plating seams) ---
+  ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+  ctx.lineWidth = 1;
+  for(let x = 0; x <= state.deckLength; x++){
+    const p1 = metersToPx(key, x, 0);
+    const p2 = metersToPx(key, x, state.deckWidth);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+  }
+  for(let y = 0; y <= state.deckWidth; y++){
+    const p1 = metersToPx(key, 0, y);
+    const p2 = metersToPx(key, state.deckLength, y);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+  }
+
+  // --- Bold bay/row lines every 5m, with reference numbers ---
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = '9px Segoe UI, sans-serif';
+  ctx.textBaseline = 'top';
+  for(let x = 0; x <= state.deckLength; x += 5){
+    const p1 = metersToPx(key, x, 0);
+    const p2 = metersToPx(key, x, state.deckWidth);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    if(x < state.deckLength) ctx.fillText(String(x), p1.x + 2, p1.y + 1);
+  }
+  for(let y = 0; y <= state.deckWidth; y += 5){
+    const p1 = metersToPx(key, 0, y);
+    const p2 = metersToPx(key, state.deckLength, y);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    if(y < state.deckWidth) ctx.fillText(String(y), p1.x + 2, p1.y + 11);
+  }
+
+  // --- Reserved no-cargo zone (red hatch) ---
+  const reserved = getReservedRect();
+  if(reserved) drawZone(key, reserved, 'rgba(217,83,79,0.35)', 'rgba(217,83,79,0.6)', -45);
+
+  // --- Access lane zone (amber hatch) ---
+  const lane = getLaneRect();
+  if(lane) drawZone(key, lane, 'rgba(224,160,48,0.35)', 'rgba(224,160,48,0.6)', 45);
+
+  // --- Containers ---
+  LD(key).containers.forEach(c => drawContainer(key, c));
+
+  // --- Drag ghost ---
+  const ds = dragStates[key];
+  if(ds.active && ds.ghostRect){
+    drawContainer(key, Object.assign({}, ds.container, ds.ghostRect), true, ds.ghostValid);
+  }
+
+  ctx.restore();
+
+  // --- Deck border (hull edge) ---
+  roundRectPath(ctx, g.offsetX, g.offsetY, g.w, g.h, 4);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'var(--navy)'.startsWith('var') ? '#0d2b3e' : '#0d2b3e';
+  ctx.stroke();
+}
+
+function drawZone(key, rect, fillColor, hatchColor, angleDeg){
+  const ctx = ctxs[key];
+  const g = geos[key];
+  const tl = metersToPx(key, rect.x, rect.y);
+  const w = rect.length * g.scale;
+  const h = rect.width * g.scale;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(tl.x, tl.y, w, h);
+  ctx.clip();
+
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(tl.x, tl.y, w, h);
+
+  ctx.strokeStyle = hatchColor;
+  ctx.lineWidth = 2;
+  const step = 10;
+  const diag = Math.sqrt(w*w + h*h) + step;
+  ctx.translate(tl.x + w/2, tl.y + h/2);
+  ctx.rotate(angleDeg * Math.PI / 180);
+  for(let i = -diag; i < diag; i += step){
+    ctx.beginPath();
+    ctx.moveTo(i, -diag);
+    ctx.lineTo(i, diag);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = hatchColor;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(tl.x, tl.y, w, h);
+}
+
+function drawContainer(key, c, isGhost, ghostValid){
+  const ctx = ctxs[key];
+  const tl = metersToPx(key, c.x, c.y);
+  const w = c.length * geos[key].scale;
+  const h = c.width * geos[key].scale;
+
+  ctx.save();
+  if(isGhost){
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = ghostValid ? c.color : '#d9534f';
+  }else{
+    ctx.fillStyle = c.color;
+  }
+  ctx.fillRect(tl.x, tl.y, w, h);
+
+  const isSelected = !isGhost && c.id === LD(key).selectedId;
+  const invalid = !isGhost && isContainerInvalid(c, key);
+  ctx.lineWidth = isSelected ? 3 : 1.5;
+  ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(0,0,0,0.35)';
+  ctx.strokeRect(tl.x, tl.y, w, h);
+
+  if(invalid){
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#ffffff';
+    ctx.setLineDash([4,3]);
+    ctx.strokeRect(tl.x+1, tl.y+1, Math.max(0,w-2), Math.max(0,h-2));
+    ctx.setLineDash([]);
+  }
+
+  if(!isGhost){
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '11px Segoe UI, sans-serif';
+    ctx.textBaseline = 'top';
+    if(w > 24 && h > 14){
+      ctx.fillText(c.name, tl.x + 3, tl.y + 2);
+    }
+    if(w > 24 && h > 28){
+      ctx.font = '9px Segoe UI, sans-serif';
+      ctx.fillText(`${fmt(c.length,1)}x${fmt(c.width,1)}m ${fmt(c.weight,1)}t`, tl.x + 3, tl.y + 15);
+    }
+  }
+  ctx.restore();
+}
+
+function updateActiveStyling(){
+  LAYOUT_KEYS.forEach(key => {
+    layoutCards[key].classList.toggle('active', key === activeKey());
+  });
+  shareTargetLabel.textContent = 'Layout ' + activeKey();
+}
+
+function render(){
+  LAYOUT_KEYS.forEach(key => {
+    computeGeometry(key);
+    drawLayout(key);
+  });
+  renderStats();
+  renderMiniStats();
+  renderReport();
+  updateActiveStyling();
+}
+
+// ---------------------------------------------------------------
+// 9. SELECTION / ACTIVATION
+// ---------------------------------------------------------------
+function activateLayout(key, opts){
+  if(state.activeLayout === key) return;
+  state.activeLayout = key;
+  render();
+  if(!opts || !opts.silent){
+    showFeedback(`Layout ${key} selected. You can now drag, drop, rotate or delete containers on it.`, '');
+  }
+}
+
+LAYOUT_KEYS.forEach(key => {
+  // Clicking anywhere on the card (header etc.) selects it.
+  layoutCards[key].addEventListener('click', () => activateLayout(key));
+});
+
+function clamp(v, min, max){
+  return Math.min(Math.max(v, min), max);
+}
+
+function showFeedback(msg, type){
+  feedback.textContent = msg;
+  feedback.className = 'feedback-msg' + (type ? ' ' + type : '');
+}
+
+// ---------------------------------------------------------------
+// 10. PLACEMENT (palette -> deck via HTML5 drag/drop)
+// ---------------------------------------------------------------
+LAYOUT_KEYS.forEach(key => {
+  const canvas = canvases[key];
+
+  canvas.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  canvas.addEventListener('drop', (e) => {
+    e.preventDefault();
+
+    // Require this layout to be selected first ("layering" gating).
+    if(activeKey() !== key){
+      activateLayout(key, { silent: true });
+      showFeedback(`Layout ${key} selected — drag the container again to place it.`, '');
+      return;
+    }
+
+    const idxStr = e.dataTransfer.getData('text/plain');
+    const idx = parseInt(idxStr, 10);
+    if(isNaN(idx) || !containerTypes[idx]) return;
+    const baseType = containerTypes[idx];
+
+    // Apply "place rotated" preference (swap length/width).
+    let type = baseType;
+    if(inputs.placeRotatedToggle.checked){
+      type = Object.assign({}, baseType, { length: baseType.width, width: baseType.length });
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const m = pxToMeters(key, px, py);
+
+    let x = clamp(Math.round(m.x - type.length / 2), 0, Math.max(0, state.deckLength - type.length));
+    let y = clamp(Math.round(m.y - type.width / 2), 0, Math.max(0, state.deckWidth - type.width));
+
+    let placement = { x, y, length: type.length, width: type.width };
+
+    // Try edge-snapping the initial drop for a tight, gap-free layout.
+    const snapped = applyEdgeSnap(placement, key, null);
+    if(isValidPlacement({ x: snapped.x, y: snapped.y, length: type.length, width: type.width }, null, key)){
+      placement = { x: snapped.x, y: snapped.y, length: type.length, width: type.width };
+    }
+
+    let finalSpot;
+    if(isValidPlacement(placement, null, key)){
+      finalSpot = { x: placement.x, y: placement.y };
+    }else{
+      finalSpot = findNearestValidSpot(type, x, y, key);
+    }
+
+    if(!finalSpot){
+      showFeedback(`Cannot place "${type.name}" on Layout ${key}: no valid space available (check overlaps, reserved area, or lane).`, 'error');
+      return;
+    }
+
+    const container = {
+      id: LD(key).nextId++,
+      name: type.name,
+      length: type.length,
+      width: type.width,
+      weight: type.weight,
+      color: type.color,
+      x: finalSpot.x,
+      y: finalSpot.y
+    };
+    LD(key).containers.push(container);
+    LD(key).selectedId = container.id;
+    showFeedback(`Placed "${type.name}" on Layout ${key} at (${finalSpot.x}m, ${finalSpot.y}m).`, 'success');
+    saveState();
+    render();
+  });
+});
+
+// ---------------------------------------------------------------
+// 11. REPOSITIONING / SELECTION (mouse events on canvas)
+// ---------------------------------------------------------------
+const dragStates = {
+  A: { active:false, container:null, offsetX:0, offsetY:0, ghostRect:null, ghostValid:true, moved:false, startPx:{x:0,y:0} },
+  B: { active:false, container:null, offsetX:0, offsetY:0, ghostRect:null, ghostValid:true, moved:false, startPx:{x:0,y:0} }
+};
+
+function containerAtPoint(key, mx, my){
+  const list = LD(key).containers;
+  for(let i = list.length - 1; i >= 0; i--){
+    const c = list[i];
+    if(mx >= c.x && mx <= c.x + c.length && my >= c.y && my <= c.y + c.width){
+      return c;
+    }
+  }
+  return null;
+}
+
+LAYOUT_KEYS.forEach(key => {
+  const canvas = canvases[key];
+
+  canvas.addEventListener('mousedown', (e) => {
+    // First click on an inactive layout just selects it.
+    if(activeKey() !== key){
+      activateLayout(key);
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const m = pxToMeters(key, px, py);
+    const c = containerAtPoint(key, m.x, m.y);
+
+    if(c){
+      const ds = dragStates[key];
+      ds.active = true;
+      ds.container = c;
+      ds.offsetX = m.x - c.x;
+      ds.offsetY = m.y - c.y;
+      ds.ghostRect = { x: c.x, y: c.y };
+      ds.ghostValid = true;
+      ds.moved = false;
+      ds.startPx = { x: px, y: py };
+      canvas.style.cursor = 'grabbing';
+    }
+  });
+});
+
+window.addEventListener('mousemove', (e) => {
+  const key = activeKey();
+  const ds = dragStates[key];
+  if(!ds.active || !ds.container) return;
+
+  const canvas = canvases[key];
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+
+  if(Math.abs(px - ds.startPx.x) > 2 || Math.abs(py - ds.startPx.y) > 2){
+    ds.moved = true;
+  }
+
+  const m = pxToMeters(key, px, py);
+  const c = ds.container;
+  let newX = clamp(m.x - ds.offsetX, 0, Math.max(0, state.deckLength - c.length));
+  let newY = clamp(m.y - ds.offsetY, 0, Math.max(0, state.deckWidth - c.width));
+
+  // Snap to 1m grid, then apply edge ("closed gap") snapping.
+  let snappedX = Math.round(newX);
+  let snappedY = Math.round(newY);
+  const edgeSnap = applyEdgeSnap(
+    { x: snappedX, y: snappedY, length: c.length, width: c.width }, key, c.id
+  );
+  snappedX = edgeSnap.x;
+  snappedY = edgeSnap.y;
+
+  ds.ghostRect = { x: snappedX, y: snappedY };
+  ds.ghostValid = isValidPlacement(
+    { x: snappedX, y: snappedY, length: c.length, width: c.width }, c.id, key
+  );
+
+  drawLayout(key);
+});
+
+window.addEventListener('mouseup', () => {
+  const key = activeKey();
+  const ds = dragStates[key];
+  if(!ds.active) return;
+  const c = ds.container;
+  canvases[key].style.cursor = 'default';
+
+  if(!ds.moved){
+    LD(key).selectedId = (LD(key).selectedId === c.id) ? null : c.id;
+  }else{
+    const rect = ds.ghostRect;
+    const valid = isValidPlacement(
+      { x: rect.x, y: rect.y, length: c.length, width: c.width }, c.id, key
+    );
+    if(valid){
+      c.x = rect.x;
+      c.y = rect.y;
+      showFeedback(`Moved "${c.name}" to (${rect.x}m, ${rect.y}m) on Layout ${key}.`, 'success');
+    }else{
+      showFeedback(`Cannot move "${c.name}" there - overlaps another container, restricted zone, or deck edge. Reverted.`, 'error');
+    }
+  }
+
+  ds.active = false;
+  ds.container = null;
+  ds.ghostRect = null;
+  saveState();
+  render();
+});
+
+// ---------------------------------------------------------------
+// 12. ROTATE / DELETE / CLEAR (per layout action buttons)
+// ---------------------------------------------------------------
+document.querySelectorAll('[data-action]').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't let the card-click handler also fire oddly
+    const key = btn.dataset.layout;
+    activateLayout(key, { silent: true });
+
+    const action = btn.dataset.action;
+    const layout = LD(key);
+
+    if(action === 'rotate'){
+      if(layout.selectedId === null){
+        showFeedback(`Select a container on Layout ${key} first, then press Rotate.`, 'error');
+        return;
+      }
+      const c = layout.containers.find(c => c.id === layout.selectedId);
+      const swapped = { length: c.width, width: c.length };
+
+      // Try same position rotated; if invalid, search nearby; else revert.
+      let rect = { x: c.x, y: c.y, length: swapped.length, width: swapped.width };
+      // Clamp so the rotated footprint stays on the deck before validating.
+      rect.x = clamp(rect.x, 0, Math.max(0, state.deckLength - rect.length));
+      rect.y = clamp(rect.y, 0, Math.max(0, state.deckWidth - rect.width));
+
+      if(isValidPlacement(rect, c.id, key)){
+        c.x = rect.x; c.y = rect.y;
+        c.length = swapped.length; c.width = swapped.width;
+        showFeedback(`Rotated "${c.name}" on Layout ${key}.`, 'success');
+      }else{
+        const spot = findNearestValidSpot({length:swapped.length, width:swapped.width, name:c.name}, c.x, c.y, key);
+        // Exclude self from the search by temporarily removing it.
+        const idx = layout.containers.indexOf(c);
+        layout.containers.splice(idx,1);
+        const spot2 = findNearestValidSpot({length:swapped.length, width:swapped.width}, c.x, c.y, key);
+        layout.containers.splice(idx,0,c);
+        if(spot2){
+          c.x = spot2.x; c.y = spot2.y;
+          c.length = swapped.length; c.width = swapped.width;
+          showFeedback(`Rotated "${c.name}" on Layout ${key} (repositioned to fit).`, 'success');
+        }else{
+          showFeedback(`Cannot rotate "${c.name}" - no valid space for the rotated footprint on Layout ${key}.`, 'error');
+        }
+      }
+      saveState();
+      render();
+
+    }else if(action === 'delete'){
+      if(layout.selectedId === null){
+        showFeedback(`Select a container on Layout ${key} first, then press Delete Selected.`, 'error');
+        return;
+      }
+      const c = layout.containers.find(c => c.id === layout.selectedId);
+      layout.containers = layout.containers.filter(c => c.id !== layout.selectedId);
+      layout.selectedId = null;
+      if(c) showFeedback(`Removed "${c.name}" from Layout ${key}.`, 'success');
+      saveState();
+      render();
+
+    }else if(action === 'clear'){
+      if(layout.containers.length === 0){
+        showFeedback(`Layout ${key} is already empty.`, '');
+        return;
+      }
+      if(!confirm(`Clear all containers from Layout ${key}?`)) return;
+      layout.containers = [];
+      layout.selectedId = null;
+      layout.nextId = 1;
+      showFeedback(`Layout ${key} cleared.`, 'success');
+      saveState();
+      render();
+    }
+  });
+});
+
+// ---------------------------------------------------------------
+// 13. RESET EVERYTHING
+// ---------------------------------------------------------------
+el('resetBtn').addEventListener('click', () => {
+  if(!confirm('Reset deck parameters and remove ALL containers from BOTH layouts?')) return;
+  state = defaultState();
+  containerTypes = [...PREDEFINED_TYPES];
+  customColorIndex = 0;
+  syncInputsFromState();
+  showFeedback('Everything reset to defaults.', 'success');
+  saveState();
+  render();
+  renderPalette();
+});
+
+// ---------------------------------------------------------------
+// 14. CUSTOM CONTAINER FORM
+// ---------------------------------------------------------------
+el('addCustomBtn').addEventListener('click', () => {
+  const name = el('custName').value.trim() || `Custom ${containerTypes.length + 1}`;
+  const length = parseFloat(el('custLength').value);
+  const width = parseFloat(el('custWidth').value);
+  const weight = parseFloat(el('custWeight').value);
+
+  if(!(length > 0) || !(width > 0) || !(weight >= 0)){
+    showFeedback('Please enter valid positive dimensions and a non-negative weight for the custom container.', 'error');
+    return;
+  }
+
+  const color = CUSTOM_COLORS[customColorIndex % CUSTOM_COLORS.length];
+  customColorIndex++;
+
+  containerTypes.push({ name, length, width, weight, color, custom: true });
+  renderPalette();
+  showFeedback(`Added "${name}" (${fmt(length,1)}x${fmt(width,1)}m, ${fmt(weight,2)}t) to the palette.`, 'success');
+  saveState();
+});
+
+// ---------------------------------------------------------------
+// 15. INPUT BINDINGS (deck params & toggles — shared by both layouts)
+// ---------------------------------------------------------------
+function syncInputsFromState(){
+  inputs.deckLength.value = state.deckLength;
+  inputs.deckWidth.value = state.deckWidth;
+  inputs.payloadToggle.checked = state.payloadEnabled;
+  inputs.maxPayload.value = state.maxPayload;
+  inputs.maxPayload.disabled = !state.payloadEnabled;
+  inputs.reservedToggle.checked = state.reservedEnabled;
+  inputs.reservedArea.value = state.reservedArea;
+  inputs.reservedArea.disabled = !state.reservedEnabled;
+  inputs.laneToggle.checked = state.laneEnabled;
+  inputs.laneWidth.value = state.laneWidth;
+  inputs.laneWidth.disabled = !state.laneEnabled;
+}
+
+inputs.deckLength.addEventListener('input', () => {
+  const v = parseFloat(inputs.deckLength.value);
+  if(v > 0) state.deckLength = v;
+  afterDeckChange();
+});
+inputs.deckWidth.addEventListener('input', () => {
+  const v = parseFloat(inputs.deckWidth.value);
+  if(v > 0) state.deckWidth = v;
+  afterDeckChange();
+});
+
+inputs.payloadToggle.addEventListener('change', () => {
+  state.payloadEnabled = inputs.payloadToggle.checked;
+  inputs.maxPayload.disabled = !state.payloadEnabled;
+  saveState(); render();
+});
+inputs.maxPayload.addEventListener('input', () => {
+  const v = parseFloat(inputs.maxPayload.value);
+  if(v >= 0) state.maxPayload = v;
+  saveState(); render();
+});
+
+inputs.reservedToggle.addEventListener('change', () => {
+  state.reservedEnabled = inputs.reservedToggle.checked;
+  inputs.reservedArea.disabled = !state.reservedEnabled;
+  afterDeckChange();
+});
+inputs.reservedArea.addEventListener('input', () => {
+  const v = parseFloat(inputs.reservedArea.value);
+  if(v >= 0) state.reservedArea = v;
+  afterDeckChange();
+});
+
+inputs.laneToggle.addEventListener('change', () => {
+  state.laneEnabled = inputs.laneToggle.checked;
+  inputs.laneWidth.disabled = !state.laneEnabled;
+  afterDeckChange();
+});
+inputs.laneWidth.addEventListener('input', () => {
+  const v = parseFloat(inputs.laneWidth.value);
+  if(v >= 0) state.laneWidth = v;
+  afterDeckChange();
+});
+
+// Deck/zone changes affect both layouts (shared geometry); we do NOT
+// auto-move or auto-delete existing containers - invalid ones get a
+// dashed highlight + warning so the user can fix them per layout.
+function afterDeckChange(){
+  saveState();
+  render();
+  const invalidA = getInvalidContainers('A').length;
+  const invalidB = getInvalidContainers('B').length;
+  if(invalidA + invalidB > 0){
+    showFeedback(`Deck/zone change left ${invalidA} container(s) invalid on Layout A and ${invalidB} on Layout B (dashed outline). Move or delete them.`, 'error');
+  }
+}
+
+// ---------------------------------------------------------------
+// 16. SHARE / EXPORT (screenshot of the active layout)
+// ---------------------------------------------------------------
+
+// Builds a composite PNG (title + stats + canvas) for the active layout.
+function buildSnapshotCanvas(){
+  const key = activeKey();
+  const src = canvases[key];
+
+  const composite = document.createElement('canvas');
+  composite.width = Math.max(src.width, 480);
+  composite.height = src.height + 64;
+  const cctx = composite.getContext('2d');
+
+  cctx.fillStyle = '#ffffff';
+  cctx.fillRect(0, 0, composite.width, composite.height);
+
+  cctx.fillStyle = '#0d2b3e';
+  cctx.font = 'bold 16px Segoe UI, sans-serif';
+  cctx.textBaseline = 'top';
+  cctx.fillText(`Ship Cargo Deck Plan — Layout ${key}`, 12, 10);
+
+  cctx.fillStyle = '#5d7180';
+  cctx.font = '12px Segoe UI, sans-serif';
+  const summary = `Deck ${fmt(state.deckLength,1)}m x ${fmt(state.deckWidth,1)}m | ` +
+    `Util ${fmt(calcUtilization(key),1)}% | Weight ${fmt(calcTotalWeight(key),2)}t` +
+    (state.payloadEnabled ? ` / ${fmt(state.maxPayload,2)}t` : '') +
+    ` | Containers: ${LD(key).containers.length}`;
+  cctx.fillText(summary, 12, 34);
+
+  // Center the deck canvas image below the header text.
+  const drawX = (composite.width - src.width) / 2;
+  cctx.drawImage(src, drawX, 60);
+
+  return { canvas: composite, key, summary };
+}
+
+function downloadCanvasAsPng(canvasEl, filename){
+  canvasEl.toBlob((blob) => {
+    if(!blob){
+      showFeedback('Could not generate the snapshot image in this browser.', 'error');
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+}
+
+el('downloadBtn').addEventListener('click', () => {
+  const { canvas, key } = buildSnapshotCanvas();
+  downloadCanvasAsPng(canvas, `deck-layout-${key}.png`);
+  showFeedback(`Snapshot of Layout ${key} downloaded.`, 'success');
+});
+
+el('shareNativeBtn').addEventListener('click', () => {
+  const { canvas, key, summary } = buildSnapshotCanvas();
+
+  if(!(navigator.share && navigator.canShare)){
+    showFeedback('Native sharing is not supported in this browser. Use Download Image, then attach it via Email/WhatsApp.', 'error');
+    return;
+  }
+
+  canvas.toBlob(async (blob) => {
+    if(!blob){
+      showFeedback('Could not generate the snapshot image in this browser.', 'error');
+      return;
+    }
+    const file = new File([blob], `deck-layout-${key}.png`, { type: 'image/png' });
+    const shareData = { files: [file], title: `Deck Layout ${key}`, text: summary };
+
+    if(navigator.canShare(shareData)){
+      try{
+        await navigator.share(shareData);
+        showFeedback(`Layout ${key} snapshot shared.`, 'success');
+      }catch(err){
+        if(err && err.name !== 'AbortError'){
+          showFeedback('Sharing was cancelled or failed. You can use Download Image instead.', 'error');
+        }
+      }
+    }else{
+      showFeedback('This browser cannot share images directly. Use Download Image, then attach it via Email/WhatsApp.', 'error');
+    }
+  }, 'image/png');
+});
+
+el('emailBtn').addEventListener('click', () => {
+  const key = activeKey();
+  const subject = encodeURIComponent(`Ship Cargo Deck Plan — Layout ${key}`);
+  const body = encodeURIComponent(
+    buildReportText(key) +
+    '\n\n(Tip: use "Download Image" first and attach the saved PNG snapshot to this email.)'
+  );
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+});
+
+el('whatsappBtn').addEventListener('click', () => {
+  const key = activeKey();
+  const text = encodeURIComponent(
+    buildReportText(key) +
+    '\n\n(Tip: use "Download Image" first and attach the saved PNG snapshot in WhatsApp.)'
+  );
+  window.open(`https://wa.me/?text=${text}`, '_blank');
+});
+
+// ---------------------------------------------------------------
+// 17. RESIZE HANDLING
+// ---------------------------------------------------------------
+window.addEventListener('resize', () => render());
+
+if(typeof ResizeObserver !== 'undefined'){
+  LAYOUT_KEYS.forEach(key => new ResizeObserver(() => render()).observe(wrappers[key]));
+}
+
+// ---------------------------------------------------------------
+// 18. INIT
+// ---------------------------------------------------------------
+function init(){
+  loadState();
+  syncInputsFromState();
+  renderPalette();
+  render();
+  if(LD('A').containers.length === 0 && LD('B').containers.length === 0){
+    showFeedback('Click "Layout A" or "Layout B" to select it, then drag a container from the palette onto its deck.', '');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
